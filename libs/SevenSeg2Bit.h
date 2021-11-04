@@ -95,6 +95,11 @@ public:
   //
   void off();
 
+  // test
+  // tests the display
+  //
+  void test();
+
 private:
   // output
   // Outputs the digits based on the inputs

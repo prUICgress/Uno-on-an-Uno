@@ -217,3 +217,31 @@ void SevenSeg2Bit::output(int val2, int val1) {
     delay(delayTime);   // Delay
 
 }
+
+// test
+// tests the display
+//
+void SevenSeg2Bit::test() {
+  for (int d = 1; d<=2; d++) {
+
+    if (d==1) {
+      digitalWrite(digit1, 1);
+      digitalWrite(digit2, 0);
+    } else {
+      digitalWrite(digit1, 0);
+      digitalWrite(digit2, 1);
+    }
+
+    
+    for (int currOn = 0; currOn<7; currOn++) {
+        for (int i=0; i<7; i++) {
+            digitalWrite(segPins[i], 0);
+        }
+        digitalWrite(segPins[currOn], 1);
+        delay(200);
+    }
+    digitalWrite(segPins[6], 0);
+    delay(200);
+  }
+  digitalWrite(digit2, 0);
+}
