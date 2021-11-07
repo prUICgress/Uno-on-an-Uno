@@ -9,8 +9,8 @@
 Buzzer buzzer(7);
 LCD lcd(13,12,11,10,9,8);
 LEDMatrix matrix(49,51,53);   // Data, clk, cs
-SevenSeg2Bit topCard(3,4,25,35,33,23,31,27,29,-1);         // Right 7-seg
-SevenSeg2Bit cardCounter(5,6,32,22,24,28,26,34,30,-1);     // Left 7-seg
+SevenSeg2Bit topCard(4,3,25,35,33,23,31,27,29,-1);         // Right 7-seg
+SevenSeg2Bit cardCounter(6,5,32,22,24,28,26,34,30,-1);     // Left 7-seg
 UnoGame* game = nullptr;
   
 
@@ -385,6 +385,7 @@ void testComponents() {
         cardCounter.display(i);
         delay(1);
       }
+    cardCounter.test();
     cardCounter.off();
     lcd.displayCenter("Press DRAW if", "left 7seg works");
     while (!digitalRead(drawButton));
@@ -399,6 +400,7 @@ void testComponents() {
         topCard.display(i);
         delay(1);
       }
+    topCard.test();
     topCard.off();
     lcd.displayCenter("Press DRAW if", "right 7seg works");
     while (!digitalRead(drawButton));
