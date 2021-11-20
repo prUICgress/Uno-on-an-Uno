@@ -72,9 +72,14 @@ int CardList::findCardIndex(int cardNumber, int cardColor) {
 	for (int i = 0; i < cardCount; i++) {
 		if (cardList[i].getNumber() == cardNumber && cardList[i].getColor() == cardColor)
 			return i;
+    else if (cardList[i].getNumber() == CARD_WILD && cardNumber == CARD_WILD)         // Wild color is changed
+      return i;
+    else if (cardList[i].getNumber() == CARD_WILD_4 && cardNumber == CARD_WILD_4)
+      return i;
 	}
 
 	// Not found
+  Serial.println("Card not found");
 	return -1;
 }
 

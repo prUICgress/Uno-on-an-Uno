@@ -1,12 +1,12 @@
 #pragma once
 
 #include <stdio.h>
-#include <cstring>
+//#include <cstring>
 #include "Card.h"
 
 
 
-struct state {		// Receiving played card, or sending n cards (up to 7)
+static struct state {		// Receiving played card, or sending n cards (up to 7)
 	int cardCount = 0;
 	Card cards[7];
 	bool calledUno = false;
@@ -31,4 +31,3 @@ public:
 	
 	
 };
-

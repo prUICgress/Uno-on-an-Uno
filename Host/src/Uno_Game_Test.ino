@@ -4,6 +4,7 @@
 #include "LEDMatrix.h"
 #include "SevenSeg2Bit.h"
 #include "Unogame.h"
+#include "SerialHandler.h"
 
 // Declare objects
 Buzzer buzzer(7);
@@ -12,6 +13,7 @@ LEDMatrix matrix(49,51,53);   // Data, clk, cs
 SevenSeg2Bit topCard(4,3,25,35,33,23,31,27,29,-1);         // Right 7-seg
 SevenSeg2Bit cardCounter(6,5,32,22,24,28,26,34,30,-1);     // Left 7-seg
 UnoGame* game = nullptr;
+SerialHandler sh;
   
 
 // Extra pins
@@ -20,7 +22,8 @@ int drawButton = 36;
 int startButton = 43;         // Used for testing, pairing, and starting the game
 
 // Constants
-const int initialCardCount = 7;
+const int initialCardCount = 2;
+const int unoWaitTime = 2000;       // The waiting time in ms to allow uno to be called
 
 
 void setRGB(int r, int g, int b);
@@ -31,7 +34,8 @@ int pairPlayers();
 void(* resetFunc) (void) = 0;            // Resets the program
 void displayTopChange();                 // Displays the top card on the matrix and buzzer
 void updateLCDInfo();                   // Displays game info on the LCD
-
+char getCommand(state& s);      // Parses the state passed by a player to determine output; returns the command 
+int getCardIndexFromState(state& s);        // Parses the state and returns the card index that the player sent   -- Only to be used for play card commands
 
 void setup() {  
     // Setup pins
@@ -39,7 +43,11 @@ void setup() {
     pinMode(startButton, INPUT);
 
     Serial.setTimeout(-1);
-    Serial.begin(9600);               // Init serial
+    Serial.begin(9600);               // Init serial debugger
+    Serial1.begin(9600);              // Player 1 serial
+    Serial2.begin(9600);              // Player 2 serial
+    Serial3.begin(9600);              // Player 3 serial
+   
     randomSeed(analogRead(0));        // Randomize seed
 
     lcd.displayCenter("Press start","to begin");
@@ -60,15 +68,29 @@ void setup() {
         delay(1);
         pressTime++;
     }
+
     lcd.clear();
 
 
     // Pair players
-    int playerCount = pairPlayers();
+    int playerCount = pairPlayers(  );
 
     // Initialize game
     game = new UnoGame(playerCount, initialCardCount);
 
+    // Give each player their cards
+    for (int p = 0; p < playerCount; p++) {
+        // Build output state
+        state s;
+        s.cardCount = initialCardCount;
+        for (int card = 0; card < initialCardCount; card++) {
+            s.cards[card] = game->playerAt(p).cardAt(card);
+        }
+
+        // Send state to player
+        sh.sendToPlayer(p+1, s);
+    }
+    
 
     // Display first state
     buzzer.playToneList("playCard");
@@ -94,7 +116,6 @@ void loop() {
     char cmd;
     int index;
     int done = 0;
-    char readIn[3];
     
     // Display current state
     game->dumpGameState();
@@ -111,14 +132,47 @@ void loop() {
       cardCounter.display(game->playerAt(game->getCurrentPlayer()).getCardCount());
     cardCounter.off();
 
+    // Signal player that its their turn
+    state start;
+    start.cardCount = -1;
+    sh.sendToPlayer(game->getCurrentPlayer()+1, start);
+    
+
 
     // Loop until player's turn is complete
     while (!done) {
       // Reset 
       Serial.print("Input: ");
-      Serial.readBytesUntil('\n', readIn, 3);
-      cmd = readIn[0];
-      index = (int)readIn[2] - '0';
+
+      // Loop until player input or card drawn
+      state s;
+      while (1) {
+          switch (game->getCurrentPlayer()+1) {
+            case 1:
+                if (Serial1.available() >= dataSize)
+                    s = sh.receiveFromPlayer(game->getCurrentPlayer()+1);     // receive game state from player
+                break;
+            case 2:
+                if (Serial2.available() >= dataSize)
+                    s = sh.receiveFromPlayer(game->getCurrentPlayer()+1);     // receive game state from player
+                break;
+            case 3:
+                if (Serial3.available() >= dataSize)
+                    s = sh.receiveFromPlayer(game->getCurrentPlayer()+1);     // receive game state from player
+                break;
+          }
+          if (digitalRead(drawButton)) {
+              cmd = 'd';
+              break;
+          } else {
+              cmd = getCommand(s);
+              if (cmd != 'z') break;
+          }
+      }
+
+      
+      index = getCardIndexFromState(s);
+      
 
       // Display input
       Serial.print(cmd);
@@ -130,49 +184,76 @@ void loop() {
       if (cmd == 'p') {
         Card c = game->playerAt(game->getCurrentPlayer()).cardAt(index);  
         if (game->canPlayCard(c.getNumber(), c.getColor())) {
+          
           // Play card
           game->playCard(game->getCurrentPlayer(), index);
+          
           done = 1;
 
-          // If WILD, Get COLOR
-          if (c.getColor() == C_WILD) {
-            Serial.print("Color? ");
-            char inputC[1];
-            int chosen = 0;
-            while (chosen == 0) {
-              Serial.readBytesUntil('\n', inputC, 1);
-              char input = inputC[0];
-              chosen = 1;
-              if (input == 'r') {
-                game->setTop(c.getNumber(), C_RED);
-                matrix.clear();
-              } else if (input == 'y') {
-                game->setTop(c.getNumber(), C_YELLOW);
-                matrix.clear();
-              } else if (input == 'g') {
-                game->setTop(c.getNumber(), C_GREEN);
-                matrix.clear();
-              } else if (input == 'b') {
-                game->setTop(c.getNumber(), C_BLUE);
-                matrix.clear();
-              } else {
-                buzzer.playToneList("invalidTone");
-                Serial.println("Invalid color");
-                chosen = 0;
-              }
 
-            }
-          } else {
-            matrix.clear();
-            game->setTop(c.getNumber(), c.getColor());
+          // Check for UNO gotcha - ONLY if they have UNO and player hasn't called uno
+          if (game->hasUNO(game->getCurrentPlayer()) && game->getCalledUno() == false) {
+              // Send signal to players that gotcha call is allowed
+              state askForGotcha;
+              askForGotcha.cardCount = -3;
+              sh.sendToPlayer(1, askForGotcha);
+              sh.sendToPlayer(2, askForGotcha);
+              sh.sendToPlayer(3, askForGotcha);
+      
+              buzzer.playToneList("playCard");
+              Serial.println("Waiting for uno GOTCHA");
+              int timer = millis();
+              int prev = timer;
+              while (timer-prev < unoWaitTime) {
+                  // Check if anyone calls uno
+                  state recSt;
+                  if (Serial1.available() >= dataSize)
+                      recSt = sh.receiveFromPlayer(1);
+                  else if (Serial2.available() >= dataSize)
+                      recSt = sh.receiveFromPlayer(2);
+                  else if (Serial3.available() >= dataSize)
+                      recSt = sh.receiveFromPlayer(3);
+      
+                  if (recSt.calledUno == true) {
+                      // Gotcha! draw cards
+                      state sendSt;
+                      sendSt.cardCount = 2;
+                      for (int i=0; i<2; i++) {
+                        Card draw = game->playerAt(game->getCurrentPlayer()).draw();
+                        sendSt.cards[i] = draw;
+                      }
+          
+                      // Send state
+                      sh.sendToPlayer(game->getCurrentPlayer()+1, sendSt);
+                      break;
+                  }
+                  timer = millis();
+              }
           }
+          
+
+          // Send -2 (turn complete signal to player) -- It is expected that the player receives this signal and remove the card from their deck
+          state stEnd;
+          stEnd.cardCount = -2;
+          sh.sendToPlayer(game->getCurrentPlayer()+1, stEnd);
+
+          // Set card number and color regardless of WILD status
+          // Player sends wild with specified color
+          game->setTop(s.cards[0].getNumber(), s.cards[0].getColor());
    
 
           // Apply cards
           if (c.getNumber() == CARD_DRAW_2) {
             game->nextPlayer();
-            for (int i=0; i<2; i++)
-              game->playerAt(game->getCurrentPlayer()).draw();
+            state sendSt;
+            sendSt.cardCount = 2;
+            for (int i=0; i<2; i++) {
+              Card draw = game->playerAt(game->getCurrentPlayer()).draw();
+              sendSt.cards[i] = draw;
+            }
+
+            // Send state
+            sh.sendToPlayer(game->getCurrentPlayer()+1, sendSt);
 
             // If >2 players, skip player
             if (game->getPlayerCount() > 2)
@@ -180,9 +261,16 @@ void loop() {
             
           } else if (c.getNumber() == CARD_WILD_4) {
             game->nextPlayer();
-            for (int i = 0; i < 4; i++)
-              game->playerAt(game->getCurrentPlayer()).draw();
+            state sendSt;
+            sendSt.cardCount = 4;
+            for (int i = 0; i < 4; i++) {
+              Card draw = game->playerAt(game->getCurrentPlayer()).draw();
+              sendSt.cards[i] = draw;
+            }
 
+            // Send state
+            sh.sendToPlayer(game->getCurrentPlayer()+1, sendSt);
+            
             // If >2 players, skip player
             if (game->getPlayerCount() > 2)
               game->nextPlayer();
@@ -234,8 +322,20 @@ void loop() {
       // Draw card
       else if (cmd == 'd') {
         buzzer.playToneList("drawCard");
-        game->playerAt(game->getCurrentPlayer()).draw();
+        Card draw = game->playerAt(game->getCurrentPlayer()).draw();
         done = 1;
+
+        // Send card to player
+        state addC;
+        addC.cardCount = 1;
+        addC.cards[0] = draw;
+        sh.sendToPlayer(game->getCurrentPlayer()+1, addC);
+
+        // Send -2 (turn complete signal to player)
+        state stEnd;
+        stEnd.cardCount = -2;
+        sh.sendToPlayer(game->getCurrentPlayer()+1, stEnd);
+          
         game->nextPlayer();
       } else {
         buzzer.playToneList("invalidTone");
@@ -246,8 +346,7 @@ void loop() {
       }
     }
 
-    // Check for UNO gotcha - place before each nextplayer?
-    // Serial.println("Waiting for uno GOTCHA");
+    
 
     // Prepare for next turn
     Serial.print("\n\n");
@@ -339,10 +438,31 @@ void loop() {
     line2 += game->playerAt(3).getScore();    
   }
   lcd.displayCenter(line1, line2);
+
   
   // Wait for next game
   while (!digitalRead(startButton));
   game->newRound();
+
+  // Send reset hand state (-10) to each player
+  state reset;
+  reset.cardCount = -10;
+  sh.sendToPlayer(1, reset);
+  sh.sendToPlayer(2, reset);
+  sh.sendToPlayer(3, reset);
+
+  // Give each player their cards
+  for (int p = 0; p < game->getPlayerCount(); p++) {
+      // Build output state
+      state s;
+      s.cardCount = initialCardCount;
+      for (int card = 0; card < initialCardCount; card++) {
+          s.cards[card] = game->playerAt(p).cardAt(card);
+      }
+
+      // Send state to player
+      sh.sendToPlayer(p+1, s);
+  }
 }
 
 
@@ -449,9 +569,11 @@ void testComponents() {
 
 // pairPlayers
 // Checks the connections and pairs players
+// Currently just sets the players to 3. A future addition may be to read the serial input from
+// each connected device to properly determine the player count
 //
 int pairPlayers() {
-    return 4;
+    return 3;
 }
 
 // setRGB
@@ -631,4 +753,31 @@ void updateLCDInfo() {
 
     // Display
     lcd.displayCenter(line1, line2);
+}
+
+
+// getCommand
+// Parses the state passed by a player to determine output; returns the command and updates the char array to the full command details
+//
+char getCommand(state& s) {
+    int count = s.cardCount;
+    if (count == -1) {
+        return 'd';                       // Draw
+    } else if (s.calledUno == true) {
+        return 'u';                       // Call uno
+    } else if (count == 1) {
+        return 'p';                       // Play card
+    } else return 'z';
+}
+
+
+// getCardIndexFromState
+// Parses the state and returns the card index that the player sent   -- Only to be used for play card commands
+//
+int getCardIndexFromState(state& s) {
+    Serial.print(s.cards[0].getNumber());
+    Serial.print(" ");
+    Serial.println(s.cards[0].getColor());
+    
+    return game->playerAt(game->getCurrentPlayer()).findCard(s.cards[0].getNumber(), s.cards[0].getColor());
 }

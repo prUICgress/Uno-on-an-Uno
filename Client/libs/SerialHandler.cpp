@@ -9,7 +9,7 @@ SerialHandler::SerialHandler() {
 
 
 bool SerialHandler::sendToPlayer(int player, state& s) {
-	char dataBuffer[dataSize];					// Data storage
+	/*char dataBuffer[dataSize];					// Data storage
 	memcpy(&dataBuffer, &s, dataSize);		// Copy to data storage
 
 	// Send to specified player
@@ -26,16 +26,16 @@ bool SerialHandler::sendToPlayer(int player, state& s) {
 	default:
 		Serial.println("Error: send() invalid player");
 		return false;
-	}
+	}*/
 
-	return true;
+	return false;
 }
 
 
 state SerialHandler::receiveFromPlayer(int player) {
-	char dataBuffer[dataSize];					// char data storage
+	//char dataBuffer[dataSize];					// char data storage
 	state s;									// data output
-	
+	/*
 	// Receive from specified player
 	switch (player) {
 	case 1:
@@ -56,6 +56,7 @@ state SerialHandler::receiveFromPlayer(int player) {
 	}
 
 	memcpy(&s, &dataBuffer, dataSize);		// Copy to data storage
+	*/
 	return s;
 }
 
@@ -82,4 +83,3 @@ state SerialHandler::receiveFromHost() {
 	memcpy(&s, &dataBuffer, dataSize);		// Copy to data storage
 	return s;
 }
-
