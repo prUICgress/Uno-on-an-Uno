@@ -22,7 +22,7 @@ int drawButton = 36;
 int startButton = 43;         // Used for testing, pairing, and starting the game
 
 // Constants
-const int initialCardCount = 2;
+const int initialCardCount = 7;
 const int unoWaitTime = 2000;       // The waiting time in ms to allow uno to be called
 
 
